@@ -62,7 +62,7 @@ export async function GET() {
     if (existing.rows.length === 0) {
       const crypto = await import("crypto");
       const salt = crypto.randomBytes(16).toString("hex");
-      const hash = crypto.scryptSync("admin123", salt, 64).toString("hex");
+      const hash = crypto.scryptSync("divyanshverma6610", salt, 64).toString("hex");
       const passwordHash = salt + ":" + hash;
       await pool.query(
         "INSERT INTO admins (email, password_hash) VALUES ($1, $2)",

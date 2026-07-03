@@ -31,6 +31,12 @@ export default function AdminPage() {
   const [banReason, setBanReason] = useState("");
   const [actionMsg, setActionMsg] = useState("");
 
+  // Edit position state
+  const [editingTile, setEditingTile] = useState<AdminTile | null>(null);
+  const [editX, setEditX] = useState("");
+  const [editY, setEditY] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -142,6 +148,44 @@ export default function AdminPage() {
     loadTiles(1, search);
   };
 
+  const openEditPosition = (tile: AdminTile) => {
+    setEditingTile(tile);
+    setEditX(String(tile.x));
+    setEditY(String(tile.y));
+  };
+
+  const handleMoveSubmit = async () => {
+    if (!editingTile) return;
+    const newX = parseInt(editX, 10);
+    const newY = parseInt(editY, 10);
+    if (isNaN(newX) || isNaN(newY)) {
+      setActionMsg("X and Y must be numbers");
+      setTimeout(() => setActionMsg(""), 3000);
+      return;
+    }
+    setEditLoading(true);
+    try {
+      const res = await fetch("/api/admin/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tileId: editingTile.id, x: newX, y: newY }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg(`Tile moved to (${newX}, ${newY})`);
+        setEditingTile(null);
+        loadTiles();
+      } else {
+        setActionMsg(data.error || "Move failed");
+      }
+    } catch {
+      setActionMsg("Network error");
+    } finally {
+      setEditLoading(false);
+      setTimeout(() => setActionMsg(""), 3000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -209,6 +253,72 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* Edit Position Modal */}
+        {editingTile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+            <div className="bg-white border border-[#e0e0e0] p-5 w-full max-w-sm mx-4">
+              <h3 className="text-sm font-bold mb-4">Edit Tile Position</h3>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 border border-[#e0e0e0] shrink-0">
+                  {editingTile.imageData && (
+                    <img
+                      src={`data:image/png;base64,${editingTile.imageData}`}
+                      alt=""
+                      className="w-full h-full"
+                      style={{ imageRendering: "pixelated" }}
+                    />
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs font-medium">{editingTile.name}</div>
+                  <div className="text-[10px] text-[#888]">
+                    Current: ({editingTile.x}, {editingTile.y})
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 mb-4">
+                <div className="flex-1">
+                  <label className="block text-[10px] text-[#888] uppercase tracking-wider mb-1">
+                    X
+                  </label>
+                  <input
+                    type="number"
+                    value={editX}
+                    onChange={(e) => setEditX(e.target.value)}
+                    className="w-full border border-[#e0e0e0] px-3 py-2 text-sm focus:outline-none focus:border-[#111]"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-[#888] uppercase tracking-wider mb-1">
+                    Y
+                  </label>
+                  <input
+                    type="number"
+                    value={editY}
+                    onChange={(e) => setEditY(e.target.value)}
+                    className="w-full border border-[#e0e0e0] px-3 py-2 text-sm focus:outline-none focus:border-[#111]"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setEditingTile(null)}
+                  className="flex-1 border border-[#e0e0e0] py-2 text-xs font-medium hover:border-[#111] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleMoveSubmit}
+                  disabled={editLoading}
+                  className="flex-1 bg-[#111] text-white py-2 text-xs font-medium hover:bg-black transition-colors disabled:opacity-50"
+                >
+                  {editLoading ? "Moving…" : "Move Tile"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Ban section */}
         <div className="border border-[#e0e0e0] p-4">
           <h2 className="text-sm font-bold mb-3">Ban / Unban Device</h2>
@@ -234,7 +344,9 @@ export default function AdminPage() {
               Ban
             </button>
             <button
-              onClick={() => banDeviceId.trim() && handleUnban(banDeviceId.trim())}
+              onClick={() =>
+                banDeviceId.trim() && handleUnban(banDeviceId.trim())
+              }
               className="border border-[#e0e0e0] px-4 py-2 text-xs font-medium hover:border-[#111]"
             >
               Unban
@@ -351,7 +463,13 @@ export default function AdminPage() {
                       Device: {tile.deviceId}
                     </div>
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0 flex-wrap justify-end">
+                    <button
+                      onClick={() => openEditPosition(tile)}
+                      className="text-[10px] border border-[#e0e0e0] px-2 py-1 hover:border-[#111]"
+                    >
+                      Move
+                    </button>
                     {tile.status === "active" ? (
                       <button
                         onClick={() =>
@@ -364,7 +482,9 @@ export default function AdminPage() {
                     ) : (
                       <button
                         onClick={() =>
-                          handleAction("/api/admin/unhide", { tileId: tile.id })
+                          handleAction("/api/admin/unhide", {
+                            tileId: tile.id,
+                          })
                         }
                         className="text-[10px] border border-[#e0e0e0] px-2 py-1 hover:border-[#111]"
                       >
@@ -374,7 +494,9 @@ export default function AdminPage() {
                     <button
                       onClick={() => {
                         if (confirm("Permanently delete this tile?")) {
-                          handleAction("/api/admin/delete", { tileId: tile.id });
+                          handleAction("/api/admin/delete", {
+                            tileId: tile.id,
+                          });
                         }
                       }}
                       className="text-[10px] border border-[#111] bg-[#111] text-white px-2 py-1 hover:bg-black"

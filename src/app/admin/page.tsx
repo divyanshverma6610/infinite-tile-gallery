@@ -37,6 +37,9 @@ export default function AdminPage() {
   const [editY, setEditY] = useState("");
   const [editLoading, setEditLoading] = useState(false);
 
+  // Repack state
+  const [repacking, setRepacking] = useState(false);
+
   useEffect(() => {
     checkAuth();
   }, []);
@@ -105,9 +108,29 @@ export default function AdminPage() {
     [page, search]
   );
 
+  const repackGrid = async () => {
+    setRepacking(true);
+    try {
+      const res = await fetch("/api/admin/repack", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg(data.message || "Grid repacked");
+        loadTiles();
+      } else {
+        setActionMsg(data.error || "Repack failed");
+      }
+    } catch {
+      setActionMsg("Network error");
+    } finally {
+      setRepacking(false);
+      setTimeout(() => setActionMsg(""), 3000);
+    }
+  };
+
   const handleAction = async (
     endpoint: string,
-    body: Record<string, unknown>
+    body: Record<string, unknown>,
+    autoRepack = false
   ) => {
     try {
       const res = await fetch(endpoint, {
@@ -117,8 +140,13 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setActionMsg("Action completed");
-        loadTiles();
+        if (autoRepack) {
+          setActionMsg("Action completed. Repacking grid…");
+          await repackGrid();
+        } else {
+          setActionMsg("Action completed");
+          loadTiles();
+        }
       } else {
         setActionMsg(data.error || "Action failed");
       }
@@ -172,9 +200,9 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (res.ok) {
-        setActionMsg(`Tile moved to (${newX}, ${newY})`);
+        setActionMsg(`Tile moved to (${newX}, ${newY}). Repacking…`);
         setEditingTile(null);
-        loadTiles();
+        await repackGrid();
       } else {
         setActionMsg(data.error || "Move failed");
       }
@@ -319,38 +347,62 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Ban section */}
-        <div className="border border-[#e0e0e0] p-4">
-          <h2 className="text-sm font-bold mb-3">Ban / Unban Device</h2>
-          <div className="flex gap-2 flex-wrap">
-            <input
-              type="text"
-              value={banDeviceId}
-              onChange={(e) => setBanDeviceId(e.target.value)}
-              placeholder="Device ID"
-              className="flex-1 min-w-[200px] border border-[#e0e0e0] px-3 py-2 text-xs focus:outline-none focus:border-[#111]"
-            />
-            <input
-              type="text"
-              value={banReason}
-              onChange={(e) => setBanReason(e.target.value)}
-              placeholder="Reason (optional)"
-              className="flex-1 min-w-[150px] border border-[#e0e0e0] px-3 py-2 text-xs focus:outline-none focus:border-[#111]"
-            />
+        {/* Repack + Ban section */}
+        <div className="flex gap-4 flex-wrap">
+          {/* Repack */}
+          <div className="border border-[#e0e0e0] p-4 flex-1 min-w-[250px]">
+            <h2 className="text-sm font-bold mb-2">Repack Grid</h2>
+            <p className="text-[10px] text-[#888] mb-3">
+              Removes all gaps in the spiral. Run after deleting, hiding, or moving tiles.
+            </p>
             <button
-              onClick={handleBan}
-              className="bg-[#111] text-white px-4 py-2 text-xs font-medium hover:bg-black"
+              onClick={() => {
+                if (confirm("Repack all tiles? This will reassign positions.")) {
+                  repackGrid();
+                }
+              }}
+              disabled={repacking}
+              className="w-full bg-[#111] text-white py-2 text-xs font-medium hover:bg-black disabled:opacity-50"
             >
-              Ban
+              {repacking ? "Repacking…" : "Repack Grid"}
             </button>
-            <button
-              onClick={() =>
-                banDeviceId.trim() && handleUnban(banDeviceId.trim())
-              }
-              className="border border-[#e0e0e0] px-4 py-2 text-xs font-medium hover:border-[#111]"
-            >
-              Unban
-            </button>
+          </div>
+
+          {/* Ban */}
+          <div className="border border-[#e0e0e0] p-4 flex-1 min-w-[250px]">
+            <h2 className="text-sm font-bold mb-2">Ban / Unban Device</h2>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                type="text"
+                value={banDeviceId}
+                onChange={(e) => setBanDeviceId(e.target.value)}
+                placeholder="Device ID"
+                className="flex-1 min-w-[150px] border border-[#e0e0e0] px-3 py-2 text-xs focus:outline-none focus:border-[#111]"
+              />
+              <input
+                type="text"
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                placeholder="Reason"
+                className="flex-1 min-w-[100px] border border-[#e0e0e0] px-3 py-2 text-xs focus:outline-none focus:border-[#111]"
+              />
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleBan}
+                className="flex-1 bg-[#111] text-white px-4 py-2 text-xs font-medium hover:bg-black"
+              >
+                Ban
+              </button>
+              <button
+                onClick={() =>
+                  banDeviceId.trim() && handleUnban(banDeviceId.trim())
+                }
+                className="flex-1 border border-[#e0e0e0] px-4 py-2 text-xs font-medium hover:border-[#111]"
+              >
+                Unban
+              </button>
+            </div>
           </div>
         </div>
 
@@ -473,7 +525,11 @@ export default function AdminPage() {
                     {tile.status === "active" ? (
                       <button
                         onClick={() =>
-                          handleAction("/api/admin/hide", { tileId: tile.id })
+                          handleAction(
+                            "/api/admin/hide",
+                            { tileId: tile.id },
+                            true
+                          )
                         }
                         className="text-[10px] border border-[#e0e0e0] px-2 py-1 hover:border-[#111]"
                       >
@@ -482,9 +538,11 @@ export default function AdminPage() {
                     ) : (
                       <button
                         onClick={() =>
-                          handleAction("/api/admin/unhide", {
-                            tileId: tile.id,
-                          })
+                          handleAction(
+                            "/api/admin/unhide",
+                            { tileId: tile.id },
+                            true
+                          )
                         }
                         className="text-[10px] border border-[#e0e0e0] px-2 py-1 hover:border-[#111]"
                       >
@@ -494,9 +552,11 @@ export default function AdminPage() {
                     <button
                       onClick={() => {
                         if (confirm("Permanently delete this tile?")) {
-                          handleAction("/api/admin/delete", {
-                            tileId: tile.id,
-                          });
+                          handleAction(
+                            "/api/admin/delete",
+                            { tileId: tile.id },
+                            true
+                          );
                         }
                       }}
                       className="text-[10px] border border-[#111] bg-[#111] text-white px-2 py-1 hover:bg-black"
